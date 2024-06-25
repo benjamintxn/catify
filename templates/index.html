@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Catify - Personalized Playlist</title>
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css">
+    <link rel="stylesheet" href="https://code.jquery.com/ui/1.12.1/themes/base/jquery-ui.css">
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            background-color: #f8f9fa;
+            color: #343a40;
+            font-family: 'Roboto', sans-serif;
+        }
+        .album-cover {
+            width: 100%;
+            height: auto;
+            border-radius: 10px;
+            transition: transform 0.2s ease;
+        }
+        .album-container {
+            position: relative;
+            cursor: pointer;
+        }
+        .album-info {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background-color: rgba(0, 0, 0, 0.7);
+            color: white;
+            text-align: center;
+            padding: 10px;
+            border-radius: 0 0 10px 10px;
+            opacity: 0;
+            transition: opacity 0.2s ease;
+        }
+        .album-container:hover .album-info {
+            opacity: 1;
+        }
+        .album-container:hover .album-cover {
+            transform: scale(1.05);
+        }
+        .container {
+            max-width: 1200px;
+        }
+        h1 {
+            margin-top: 20px;
+            text-align: center;
+            font-weight: 700;
+            animation: fadeInOut 4s infinite;
+        }
+        #recommendation-form button {
+            display: block;
+            margin: 20px auto;
+            font-weight: 400;
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        @keyframes fadeInOut {
+            0%, 100% { opacity: 0; }
+            50% { opacity: 1; }
+        }
+        .ui-autocomplete {
+            max-height: 100px;
+            overflow-y: auto;
+            overflow-x: hidden;
+            padding-right: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Catify - Personalized Playlist</h1>
+        <form id="recommendation-form">
+            <div class="form-group">
+                <label for="start-date">Start Date</label>
+                <input type="text" id="start-date" class="form-control" placeholder="Select start date">
+            </div>
+            <div class="form-group">
+                <label for="end-date">End Date</label>
+                <input type="text" id="end-date" class="form-control" placeholder="Select end date">
+            </div>
+            <div class="form-group">
+                <label for="genre">Genre</label>
+                <input type="text" id="genre" class="form-control" placeholder="Enter genre">
+            </div>
+            <button type="submit" class="btn btn-primary">Generate Playlist</button>
+        </form>
+        <button id="save-playlist" class="btn btn-success" style="display:none;">Save Playlist to Spotify</button>
+        <div class="d-flex justify-content-center flex-wrap" id="recommendations"></div>
+    </div>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script src="https://code.jquery.com/ui/1.12.1/jquery-ui.js"></script>
+    <script>
+        $(function() {
+            const today = new Date();
+            const todayStr = today.toISOString().split('T')[0];
+
+            $("#start-date").datepicker({
+                changeMonth: true,
+                changeYear: true,
+                dateFormat: "yy-mm-dd",
+                onSelect: function(dateText) {
+                    const endDatePicker = $("#end-date");
+                    const endDate = endDatePicker.datepicker("getDate");
+                    if (new Date(dateText) > today) {
+                        $(this).datepicker("setDate", today);
+                        alert("Start date cannot be later than today.");
+                    } else if (endDate && new Date(dateText) > endDate) {
+                        endDatePicker.datepicker("setDate", dateText);
+                    }
+                }
+            });
+
+            $("#end-date").datepicker({
+                changeMonth: true,
+                changeYear: true,
+                dateFormat: "yy-mm-dd",
+                onSelect: function(dateText) {
+                    const startDatePicker = $("#start-date");
+                    const startDate = startDatePicker.datepicker("getDate");
+                    if (new Date(dateText) > today) {
+                        $(this).datepicker("setDate", today);
+                        alert("End date cannot be later than today.");
+                    } else if (startDate && new Date(dateText) < startDate) {
+                        startDatePicker.datepicker("setDate", dateText);
+                    }
+                }
+            });
+
+            // Fetch available genres from the server
+            $.getJSON('/genres', function(genres) {
+                $("#genre").autocomplete({
+                    source: genres,
+                    minLength: 1
+                });
+            });
+        });
+
+        document.getElementById('recommendation-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const startDate = document.getElementById('start-date').value;
+            const endDate = document.getElementById('end-date').value;
+            const genre = document.getElementById('genre').value;
+            const response = await fetch(`/recommend?start_date=${startDate}&end_date=${endDate}&genre=${genre}`);
+            const recommendations = await response.json();
+            trackUris = recommendations.map(track => track.spotify_url);
+            const recommendationsContainer = document.getElementById('recommendations');
+            recommendationsContainer.innerHTML = '';
+            recommendations.forEach((track, index) => {
+                const col = document.createElement('div');
+                col.classList.add('p-2');  // Add padding
+
+                // Create a fixed-width div to ensure proper layout
+                const fixedWidthDiv = document.createElement('div');
+                fixedWidthDiv.style.width = '180px';  // Adjust width as needed
+
+                const albumContainer = document.createElement('div');
+                albumContainer.classList.add('album-container');
+                albumContainer.onclick = async () => {
+                    console.log('Playing track:', track.spotify_url);
+                    const response = await fetch('/play', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({ uri: track.spotify_url })
+                    });
+
+                    const result = await response.json();
+                    console.log('Play response:', result);
+                    if (result.status !== 'success') {
+                        alert('Failed to play the track.');
+                    }
+                };
+                const albumCover = document.createElement('img');
+                albumCover.src = track.album_cover;
+                albumCover.classList.add('album-cover');
+                const albumInfo = document.createElement('div');
+                albumInfo.classList.add('album-info');
+                albumInfo.textContent = `${track.name} by ${track.artist}`;
+                albumContainer.appendChild(albumCover);
+                albumContainer.appendChild(albumInfo);
+                fixedWidthDiv.appendChild(albumContainer);
+                col.appendChild(fixedWidthDiv);
+                recommendationsContainer.appendChild(col);
+            });
+            document.getElementById('save-playlist').style.display = 'block';
+        });
+
+        document.getElementById('save-playlist').addEventListener('click', async () => {
+            const response = await fetch('/save_playlist', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ uris: trackUris })
+            });
+            const result = await response.json();
+            if (result.status === 'success') {
+                alert(`Playlist saved! You can find it here: ${result.playlist_url}`);
+            } else {
+                alert('Failed to save playlist.');
+            }
+        });
+    </script>
+</body>
+</html>
